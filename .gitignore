@@ -1,0 +1,9 @@
+/node_modules/
+/.upstream/
+/src/reader/
+/lib/
+*.tgz
+*.zip
+.env
+.env.*
+npm-debug.log*

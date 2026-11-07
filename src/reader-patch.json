@@ -1,0 +1,85 @@
+[
+  {
+    "file": "index.ts",
+    "changes": [
+      {
+        "old": "}\n\n/** Browser plugin name. */\nexport const name = 'agentero-pdf'\n\n/** Slot services, the opener registry, and the session's right sidebar. */\nexport const inject = ['slots', 'locale', 'agentero', 'sidebarRight', 'sidebarRightTabs', 'sessions', 'conversation']\n",
+        "new": "}\n\n/** Browser plugin name. */\nexport const name = 'agentero-annotations'\n\n/** Slot services, the opener registry, and the session's right sidebar. */\nexport const inject = ['slots', 'locale', 'agentero', 'sidebarRight', 'sidebarRightTabs', 'sessions', 'conversation']\n"
+      },
+      {
+        "old": "    if (cwd === undefined || cwd === '' || !isAbsolutePath(cwd)) return undefined\n    return vaultRelative(vaultPath, joinPath(cwd, file.path))\n  }\n\n  ctx.effect(() => ctx.locale.register(NS, { zh, en }))\n  const t = ctx.locale.bind(NS)\n  ctx.effect(() => ctx.sidebarRightTabs.register({\n    id: TAB_ID,\n    kind: TAB_KIND,\n    keepMounted: true,\n    // Claim vault PDFs at the extension band so the builtin text preview stops\n    // drawing them, and the paper addresses the library opens. Other addresses\n    // stay with the builtin viewer.\n    patterns: ['*.pdf', 'dsh-resource://agentero-paper/**'],\n    canOpen: address => parsePaperAddress(address) !== undefined || vaultRefOf(address) !== undefined,\n    title: address => {\n      const paper = parsePaperAddress(address)\n      return (paper === undefined ? resourceName(address) : lastSegment(paper)) ?? t('title')\n    },\n  }))\n  ctx.effect(() => ctx.agentero.registerOpener('paper', (id) => {\n    ctx.sidebarRight.openResource(paperAddress(id))\n  }))\n\n  const face: Omit<PdfInjected, 'ask'> = {\n    resolveAddress: address => vaultRefOf(address) ?? '',\n",
+        "new": "    if (cwd === undefined || cwd === '' || !isAbsolutePath(cwd)) return undefined\n    return vaultRelative(vaultPath, joinPath(cwd, file.path))\n  }\n\n  const face: Omit<PdfInjected, 'ask'> = {\n    resolveAddress: address => vaultRefOf(address) ?? '',\n"
+      },
+      {
+        "old": "  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({\n    name: 'sidebar.right.pane.tab',\n    key: TAB_ID,\n    locale: NS,\n    inject: (sessionId) => ({ ...face, ...pdfChatActions(ctx, sessionId) }),\n  }, PdfPanel)))\n  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register({\n    name: 'sidebar.right.pane.tab.title',\n    key: TAB_ID,\n    locale: NS,\n  }, PdfTitle)))\n}\n",
+        "new": "  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({\n    name: 'sidebar.right.pane.tab',\n    key: TAB_ID,\n    priority: -100,\n    locale: NS,\n    inject: (sessionId) => ({ ...face, ...pdfChatActions(ctx, sessionId) }),\n  }, PdfPanel)))\n}\n"
+      }
+    ]
+  },
+  {
+    "file": "pdf-panel.tsx",
+    "changes": [
+      {
+        "old": "import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'\nimport { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'\nimport { cn } from './cn'\nimport { EmbedReader, type SelectionHit } from './embed-reader'\nimport type { EditableBookmark } from './bookmark'\n",
+        "new": "import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'\nimport { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'\nimport { cn } from './cn'\nimport { EmbedReader, type SelectionHit } from './embed-reader'\nimport type { EditableBookmark } from './bookmark'\n"
+      },
+      {
+        "old": "import { lastSegment, parsePaperAddress, resourceName } from './resource-path'\nimport { SelectionMenu } from './selection-menu'\nimport { TranslateCard } from './translate-card'\n\nexport interface PaintRect {\n  x: number\n",
+        "new": "import { lastSegment, parsePaperAddress, resourceName } from './resource-path'\nimport { SelectionMenu } from './selection-menu'\nimport { TranslateCard } from './translate-card'\nimport { AnnotationsPanel } from '../annotations-panel'\n\nexport interface PaintRect {\n  x: number\n"
+      },
+      {
+        "old": "  rects: PaintRect[]\n  space: 'norm' | 'pt'\n  note: string\n  /** Highlight palette key, when the store carries one. */\n  color?: HighlightColor\n  /** Host image URL tied to the source knowledge base. */\n",
+        "new": "  rects: PaintRect[]\n  space: 'norm' | 'pt'\n  note: string\n  /** The PDF itself already draws this annotation. */\n  native?: boolean\n  /** Highlight palette key, when the store carries one. */\n  color?: HighlightColor\n  /** Host image URL tied to the source knowledge base. */\n"
+      },
+      {
+        "old": "  const [message, setMessage] = useState('')\n  const [bytes, setBytes] = useState<ArrayBuffer | undefined>(undefined)\n  const [marks, setMarks] = useState<PaintMark[]>([])\n  const [menu, setMenu] = useState<MenuState | undefined>(undefined)\n  const [draft, setDraft] = useState('')\n  const [banner, setBanner] = useState('')\n",
+        "new": "  const [message, setMessage] = useState('')\n  const [bytes, setBytes] = useState<ArrayBuffer | undefined>(undefined)\n  const [marks, setMarks] = useState<PaintMark[]>([])\n  const [pdfMarks, setPdfMarks] = useState<PaintMark[]>([])\n  const combinedMarks = useMemo(() => {\n    const ids = new Set(marks.map(mark => mark.id))\n    const indexed = new Set(marks.filter(mark => mark.note.trim() !== '').map(mark => `${mark.page}\\u0000${mark.note.trim()}`))\n    return [...marks, ...pdfMarks.filter(mark => !ids.has(mark.id) && !indexed.has(`${mark.page}\\u0000${mark.note.trim()}`))]\n  }, [marks, pdfMarks])\n  const [commentsOpen, setCommentsOpen] = useState(true)\n  const [currentPage, setCurrentPage] = useState(1)\n  const [requestedPage, setRequestedPage] = useState<{ number: number, serial: number } | undefined>(undefined)\n  const [menu, setMenu] = useState<MenuState | undefined>(undefined)\n  const [draft, setDraft] = useState('')\n  const [banner, setBanner] = useState('')\n"
+      },
+      {
+        "old": "  useEffect(() => {\n    let cancelled = false\n    setBytes(undefined)\n    setMarks([])\n    setMenu(undefined)\n    setBanner('')\n    setTranslateCard(undefined)\n",
+        "new": "  useEffect(() => {\n    let cancelled = false\n    setBytes(undefined)\n    setCurrentPage(1)\n    setRequestedPage(undefined)\n    setMarks([])\n    setPdfMarks([])\n    setMenu(undefined)\n    setBanner('')\n    setTranslateCard(undefined)\n"
+      },
+      {
+        "old": "            <EmbedReader\n              bytes={bytes}\n              docId={paperPath}\n              marks={marks}\n              pdfTone={pdfTone}\n              onSetPdfTone={setPdfTone}\n              onSelect={onSelect}\n",
+        "new": "            <EmbedReader\n              bytes={bytes}\n              docId={paperPath}\n              marks={combinedMarks}\n              onNativeMarks={setPdfMarks}\n              onPageChange={setCurrentPage}\n              requestedPage={requestedPage}\n              pdfTone={pdfTone}\n              onSetPdfTone={setPdfTone}\n              onSelect={onSelect}\n"
+      },
+      {
+        "old": "\n  return (\n    <div className=\"agentero-pdf agentero-surface flex h-full min-h-0 flex-col\">\n      {body}\n      {translateCard === undefined || !translateCard.visible ? null : (\n        <TranslateCard\n          anchor={translateCard.anchor}\n",
+        "new": "\n  return (\n    <div className=\"agentero-pdf agentero-surface flex h-full min-h-0 flex-col\">\n      <div className=\"oan-bar\">\n        <span>第 {currentPage} 页</span>\n        <button type=\"button\" aria-label={commentsOpen ? '收起文字批注' : '展开文字批注'} aria-expanded={commentsOpen} onClick={() => setCommentsOpen(value => !value)}>文字批注 {combinedMarks.filter(mark => mark.note.trim() !== '').length} · {commentsOpen ? '收起' : '展开'}</button>\n      </div>\n      <div className=\"oan-layout\">\n        <div className=\"oan-reader\">{body}</div>\n        {commentsOpen && status === 'ready' ? <div className=\"oan-drawer\"><AnnotationsPanel marks={combinedMarks} currentPage={currentPage} onClose={() => setCommentsOpen(false)} onGoToPage={number => setRequestedPage(value => ({ number, serial: (value?.serial ?? 0) + 1 }))} /></div> : null}\n      </div>\n      {translateCard === undefined || !translateCard.visible ? null : (\n        <TranslateCard\n          anchor={translateCard.anchor}\n"
+      }
+    ]
+  },
+  {
+    "file": "embed-reader.tsx",
+    "changes": [
+      {
+        "old": "import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'\nimport { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'\nimport type { EditableBookmark } from './bookmark'\nimport { CommentCards } from './comment-cards'\nimport { cn } from './cn'\nimport { loadPdfEngine } from './engine'\nimport { PdfFindLayer, PdfSearchLayer } from './find'\n",
+        "new": "import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'\nimport { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'\nimport type { EditableBookmark } from './bookmark'\nimport { cn } from './cn'\nimport { loadPdfEngine } from './engine'\nimport { PdfFindLayer, PdfSearchLayer } from './find'\n"
+      },
+      {
+        "old": "  bytes: ArrayBuffer\n  docId: string\n  marks: readonly PaintMark[]\n  pdfTone: PdfPaperTone\n  onSetPdfTone: (tone: PdfPaperTone) => void\n  onSelect: (hit: SelectionHit) => void\n",
+        "new": "  bytes: ArrayBuffer\n  docId: string\n  marks: readonly PaintMark[]\n  onNativeMarks: (marks: PaintMark[]) => void\n  onPageChange: (page: number) => void\n  requestedPage?: { number: number, serial: number }\n  pdfTone: PdfPaperTone\n  onSetPdfTone: (tone: PdfPaperTone) => void\n  onSelect: (hit: SelectionHit) => void\n"
+      },
+      {
+        "old": "      }),\n      createPluginRegistration(RenderPluginPackage, {\n        defaultImageType: 'image/bmp',\n      }),\n      createPluginRegistration(TilingPluginPackage),\n      createPluginRegistration(ZoomPluginPackage, {\n",
+        "new": "      }),\n      createPluginRegistration(RenderPluginPackage, {\n        defaultImageType: 'image/bmp',\n        withAnnotations: true,\n      }),\n      createPluginRegistration(TilingPluginPackage),\n      createPluginRegistration(ZoomPluginPackage, {\n"
+      },
+      {
+        "old": "type ReaderChromeProps = EmbedReaderProps & { engine: PdfEngine }\n\nfunction ReaderChrome(props: ReaderChromeProps): ReactNode {\n  const { docId, marks, pdfTone, onSetPdfTone, onSelect, onDeselect, saveBookmarks, translate, loadLayout, translatePin, menu, selectionClearVersion, engine, t } = props\n  const hostRef = useRef<HTMLDivElement>(null)\n  const pageFocusedRef = useRef(false)\n  const [pageField, setPageField] = useState('1')\n",
+        "new": "type ReaderChromeProps = EmbedReaderProps & { engine: PdfEngine }\n\nfunction ReaderChrome(props: ReaderChromeProps): ReactNode {\n  const { docId, marks, pdfTone, onSetPdfTone, onSelect, onDeselect, saveBookmarks, translate, loadLayout, translatePin, menu, selectionClearVersion, engine, t, onPageChange, requestedPage, onNativeMarks } = props\n  const hostRef = useRef<HTMLDivElement>(null)\n  const pageFocusedRef = useRef(false)\n  const [pageField, setPageField] = useState('1')\n"
+      },
+      {
+        "old": "  const { provides: selection } = useSelectionCapability()\n  const page = scroll.state.currentPage\n  const total = scroll.state.totalPages\n  const zoomLevel = zoom.state.currentZoomLevel\n  const zoomRef = useRef(zoomLevel)\n  zoomRef.current = zoomLevel\n  const documentState = useDocumentState(docId)\n  const documentStateRef = useRef(documentState)\n  documentStateRef.current = documentState\n  const [translateOpen, setTranslateOpen] = useState(false)\n",
+        "new": "  const { provides: selection } = useSelectionCapability()\n  const page = scroll.state.currentPage\n  const total = scroll.state.totalPages\n  useEffect(() => { if (page > 0) onPageChange(page) }, [page, onPageChange])\n  useEffect(() => {\n    if (requestedPage !== undefined && scroll.provides !== undefined) scroll.provides.scrollToPage({ pageNumber: requestedPage.number })\n  }, [requestedPage, scroll.provides])\n  const zoomLevel = zoom.state.currentZoomLevel\n  const zoomRef = useRef(zoomLevel)\n  zoomRef.current = zoomLevel\n  const documentState = useDocumentState(docId)\n  useEffect(() => {\n    const document = documentState?.document\n    if (document === undefined) return\n    let cancelled = false\n    const native: PaintMark[] = []\n    void (async () => {\n      for (let start = 0; start < document.pages.length && !cancelled; start += 2) {\n        const batch = await Promise.all(document.pages.slice(start, start + 2).map(async page => {\n          try {\n            const annotations = await engine.getPageAnnotations(document, page).toPromise()\n            return annotations.flatMap(annotation => {\n              const note = annotation.contents?.trim() ?? ''\n              if (note === '') return []\n              const raw = 'segmentRects' in annotation && Array.isArray(annotation.segmentRects) ? annotation.segmentRects : [annotation.rect]\n              return [{ id: `pdf-native-${annotation.id}`, kind: 'highlight', page: page.index + 1, space: 'pt' as const, rects: raw.map(rect => ({ x: rect.origin.x, y: rect.origin.y, w: rect.size.width, h: rect.size.height })), note, native: true }]\n            })\n          } catch {\n            return []\n          }\n        }))\n        if (cancelled) return\n        native.push(...batch.flat())\n        if (start % 16 === 0 || start + 2 >= document.pages.length) onNativeMarks([...native])\n      }\n    })()\n    return () => { cancelled = true }\n  }, [documentState?.document, engine, docId, onNativeMarks])\n  const documentStateRef = useRef(documentState)\n  documentStateRef.current = documentState\n  const [translateOpen, setTranslateOpen] = useState(false)\n"
+      },
+      {
+        "old": "  const pinY = pinRect !== undefined && translatePin !== undefined && translatePin.pageSize.height > 0\n    ? pinRect.origin.y / translatePin.pageSize.height\n    : 0\n  const overlays = pageMarks.flatMap(mark => mark.rects.map((rect, index) => {\n    const x = mark.space === 'pt' ? rect.x / pageSize.width : rect.x\n    const y = mark.space === 'pt' ? rect.y / pageSize.height : rect.y\n    const w = mark.space === 'pt' ? rect.w / pageSize.width : rect.w\n",
+        "new": "  const pinY = pinRect !== undefined && translatePin !== undefined && translatePin.pageSize.height > 0\n    ? pinRect.origin.y / translatePin.pageSize.height\n    : 0\n  const overlays = pageMarks.filter(mark => !mark.native && !mark.id.startsWith('zotero-native-')).flatMap(mark => mark.rects.map((rect, index) => {\n    const x = mark.space === 'pt' ? rect.x / pageSize.width : rect.x\n    const y = mark.space === 'pt' ? rect.y / pageSize.height : rect.y\n    const w = mark.space === 'pt' ? rect.w / pageSize.width : rect.w\n"
+      },
+      {
+        "old": "      <PdfSearchLayer docId={documentId} pageIndex={layout.pageIndex} />\n      <SelectionLayer documentId={documentId} pageIndex={layout.pageIndex} />\n      <PageTranslationOverlay state={translation} width={cssW} height={cssH} tone={pdfTone} />\n      <CommentCards marks={pageMarks} pageHeight={cssH} pageSize={pageSize} t={t} />\n      {pinRect === undefined || translatePin === undefined ? null : (\n        <TranslateCardPin x={pinX} y={pinY} onOpen={translatePin.onOpen} t={t} />\n      )}\n",
+        "new": "      <PdfSearchLayer docId={documentId} pageIndex={layout.pageIndex} />\n      <SelectionLayer documentId={documentId} pageIndex={layout.pageIndex} />\n      <PageTranslationOverlay state={translation} width={cssW} height={cssH} tone={pdfTone} />\n      {pinRect === undefined || translatePin === undefined ? null : (\n        <TranslateCardPin x={pinX} y={pinY} onOpen={translatePin.onOpen} t={t} />\n      )}\n"
+      }
+    ]
+  }
+]
